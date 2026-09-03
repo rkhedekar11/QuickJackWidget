@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/QuickJack.Core/QuickJack.Core.csproj" />
+    <Project Path="src/QuickJack.Api/QuickJack.Api.csproj" />
+    <Project Path="src/QuickJack.App/QuickJack.App.csproj" />
+    <Project Path="src/QuickJack.Agent/QuickJack.Agent.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/QuickJack.Core.Tests/QuickJack.Core.Tests.csproj" />
+    <Project Path="tests/QuickJack.Api.Tests/QuickJack.Api.Tests.csproj" />
+  </Folder>
+</Solution>
