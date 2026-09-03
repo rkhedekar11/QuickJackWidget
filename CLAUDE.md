@@ -189,7 +189,9 @@ and UAC-declined cases stay on the manual checklist.
 - [x] **M3 Widget shell** — orb, drag, edge snap, palette, tray, hotkey. Verified end to end.
 - [x] **M4 API** — Kestrel, token auth, CRUD + run, SSE, guardrails, approval flow. 27 tests.
       Documented in `API.md`.
-- [ ] **M5 Agent** — pipe, pinned store, scheduled task installer, audit log.
+- [~] **M5 Agent** — IN PROGRESS. Pipe protocol, pinned store, agent server, AgentRunner and
+      the scheduled-task installer are all written and compile. **Not yet tested, and the
+      elevated path has never been executed** - see TODO.md for exactly what is outstanding.
 
 M2 and M3 were swapped relative to the original plan: building execution first means the
 widget binds to real commands and real output on day one, instead of a hardcoded list that

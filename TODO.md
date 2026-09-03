@@ -16,13 +16,31 @@
       200-command cap, 64 KB script cap, rate limit
 - [ ] Approval flow in the UI for `Approved = false` commands
 
-## M5 — Agent
+## M5 — Agent (IN PROGRESS - resume here)
 
-- [ ] Pipe contracts; `CurrentUserOnly` + explicit `PipeSecurity`
-- [ ] Client process image-path check on connect
-- [ ] `pinned.json` with Administrators-write ACL; pin/unpin UI
-- [ ] Scheduled task installer + uninstaller, with a plain-language warning
-- [ ] Audit log
+Written and compiling, but **nothing in M5 has been run or tested yet**:
+
+- `Core/Ipc/PipeProtocol.cs` - length-prefixed JSON frames, per-user pipe name
+- `Core/Storage/PinnedStore.cs` - read/write, `SecureDirectory`, `IsDirectorySecured`
+- `Core/Execution/AgentRunner.cs` - pipe client, streams output back, cancel message
+- `Agent/AgentServer.cs` - pipe server, resolves ids against the pinned store only
+- `Agent/ClientProcess.cs` - identifies the connecting exe
+- `App/Services/AgentInstaller.cs` - scheduled-task XML, install/uninstall
+
+Outstanding:
+
+- [ ] **Tests** - none written yet. Planned: `PipeProtocol` round-trip and oversized-frame
+      rejection; `AgentServer` via `AgentPolicy` seam (unknown id refused, non-agent
+      elevation refused, output streams back, cancel works); `IsDirectorySecured` returns
+      false for inherited ACL / user-writable / user-owned directories.
+- [ ] **Pin/unpin UI** - there is no way to pin a command yet, so the agent has nothing to
+      run. This is the missing user-facing half of M5.
+- [ ] **Never executed elevated.** Install needs a real UAC click, so the scheduled-task
+      XML, `--secure-store`, the ACL/owner changes and the whole no-prompt path are all
+      unverified. Verify by hand before trusting any of it.
+- [ ] Decide whether the agent should refuse to start when its own exe is not the one
+      recorded at install time.
+
 
 ---
 

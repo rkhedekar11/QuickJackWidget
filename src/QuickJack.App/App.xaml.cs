@@ -65,7 +65,9 @@ public partial class App : Application
         _tray.QuitRequested += (_, _) => Shutdown();
         Log.Info("Tray icon created.");
 
-        var viewModel = new WidgetViewModel(_store, new CommandRunner());
+        // The agent runner is always wired up; it reports plainly if no agent is installed,
+        // which beats a pinned command failing with nothing to explain it.
+        var viewModel = new WidgetViewModel(_store, new CommandRunner(new AgentRunner()));
         _widget = new WidgetWindow(viewModel, _settings);
         _widget.Show();
         Log.Info("Widget shown.");

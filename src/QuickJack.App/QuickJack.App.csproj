@@ -11,6 +11,8 @@
   <ItemGroup>
     <ProjectReference Include="..\QuickJack.Core\QuickJack.Core.csproj" />
     <ProjectReference Include="..\QuickJack.Api\QuickJack.Api.csproj" />
+    <!-- The agent exe must land next to the widget: AgentInstaller looks for it there. -->
+    <ProjectReference Include="..\QuickJack.Agent\QuickJack.Agent.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
