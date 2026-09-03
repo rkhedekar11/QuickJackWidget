@@ -181,7 +181,10 @@ public partial class WidgetWindow : Window
         WindowPlacement.MoveTo(this, x, y);
 
         _viewModel.SearchText = string.Empty;
-        _viewModel.Back();
+
+        // Reopening should not throw away a run the user is waiting on - notably one the
+        // API started while the palette was closed.
+        if (_viewModel.CurrentRun?.IsRunning != true) _viewModel.Back();
         _viewModel.Refresh();
 
         WindowPlacement.BringToFront(this);

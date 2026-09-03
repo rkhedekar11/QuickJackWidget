@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Threading;
+using QuickJack.Api;
 using QuickJack.App.Services;
 using QuickJack.App.ViewModels;
 using QuickJack.App.Views;
@@ -16,6 +17,7 @@ public partial class App : Application
     private TrayIcon? _tray;
     private HotKeyService? _hotKeys;
     private WidgetWindow? _widget;
+    private ApiHost? _api;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -71,6 +73,8 @@ public partial class App : Application
         _tray.ShowRequested += (_, _) => _widget.Expand();
         _tray.SettingsRequested += (_, _) => _widget.Expand();
 
+        if (_settings.Current.ApiEnabled) await StartApiAsync(paths, viewModel);
+
         _hotKeys = new HotKeyService();
         _hotKeys.Pressed += (_, _) => _widget.Toggle();
 
@@ -85,6 +89,34 @@ public partial class App : Application
         {
             Log.Info("Hot key " + _hotKeys.ActiveGesture + " registered.");
             if (_hotKeys.LastError is { } note) _tray.Notify("QuickJack", note);
+        }
+    }
+
+    private async Task StartApiAsync(QuickJackPaths paths, WidgetViewModel viewModel)
+    {
+        try
+        {
+            _api = new ApiHost(new ApiOptions
+            {
+                Paths = paths,
+                Store = _store!,
+                Dispatcher = new WidgetRunDispatcher(viewModel, Dispatcher),
+                Port = _settings!.Current.ApiPort,
+                RequireApproval = () => _settings!.Current.RequireApprovalForApiCommands,
+            });
+
+            await _api.StartAsync();
+            Log.Info($"API listening on http://127.0.0.1:{_api.Port}");
+        }
+        catch (Exception ex)
+        {
+            // The widget is perfectly usable without the API, so a port clash should not
+            // stop the app — but it must be visible, not silently missing.
+            Log.Error("Could not start the API", ex);
+            _api = null;
+            _tray?.Notify("QuickJack",
+                $"The command API could not start on port {_settings!.Current.ApiPort}. " +
+                "The widget still works; see app.log.");
         }
     }
 
@@ -133,6 +165,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         Log.Info("Shutting down.");
+        _api?.DisposeAsync().AsTask().GetAwaiter().GetResult();
         _hotKeys?.Dispose();
         _tray?.Dispose();
         _store?.Dispose();

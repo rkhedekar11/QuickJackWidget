@@ -37,20 +37,50 @@ public static class ParameterBinder
     private static readonly Regex ParameterNamePattern =
         new(@"\A[A-Za-z_][A-Za-z0-9_]{0,63}\z", RegexOptions.Compiled);
 
+    /// <summary>
+    /// The checks that do not depend on the supplied values: parameter names, placeholders
+    /// referring to declared parameters, substituted parameters declaring a pattern, patterns
+    /// that compile, and the cmd expansion rule. Run at registration time so a broken command
+    /// is rejected when it is added rather than at 2am when someone clicks it.
+    /// </summary>
+    public static void ValidateDefinition(CommandDef command)
+    {
+        var declared = Declare(command);
+
+        if (command.Shell == ShellKind.Cmd) RejectImmediateExpansion(command.Script, declared.Keys);
+
+        foreach (var (name, def) in declared)
+        {
+            if (string.IsNullOrEmpty(def.Pattern)) continue;
+
+            try { _ = Regex.IsMatch(string.Empty, $@"\A(?:{def.Pattern})\z", RegexOptions.None, MatchTimeout); }
+            catch (RegexMatchTimeoutException) { /* a slow pattern is caught per-value at run time */ }
+            catch (ArgumentException)
+            {
+                throw new ParameterValidationException($"Parameter '{name}' has an invalid pattern.");
+            }
+        }
+
+        foreach (Match match in PlaceholderPattern.Matches(command.Script))
+        {
+            var name = match.Groups["name"].Value;
+
+            if (!declared.TryGetValue(name, out var def))
+                throw new ParameterValidationException(
+                    $"Script references '{{{{{name}}}}}' but no such parameter is declared.");
+
+            if (string.IsNullOrEmpty(def.Pattern))
+                throw new ParameterValidationException(SubstitutionNeedsPattern(name));
+        }
+    }
+
     public static BoundScript Bind(
         CommandDef command,
         IReadOnlyDictionary<string, string>? arguments = null)
     {
         arguments ??= new Dictionary<string, string>();
 
-        var declared = new Dictionary<string, ParameterDef>(StringComparer.OrdinalIgnoreCase);
-        foreach (var p in command.Parameters)
-        {
-            if (!ParameterNamePattern.IsMatch(p.Name))
-                throw new ParameterValidationException($"Invalid parameter name '{p.Name}'.");
-            if (!declared.TryAdd(p.Name, p))
-                throw new ParameterValidationException($"Duplicate parameter '{p.Name}'.");
-        }
+        var declared = Declare(command);
 
         // Undeclared arguments are rejected rather than ignored: silently dropping them
         // hides typos, and accepting them would let a caller inject arbitrary environment.
@@ -92,6 +122,26 @@ public static class ParameterBinder
         return new BoundScript(script, environment);
     }
 
+    private static Dictionary<string, ParameterDef> Declare(CommandDef command)
+    {
+        var declared = new Dictionary<string, ParameterDef>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var p in command.Parameters)
+        {
+            if (!ParameterNamePattern.IsMatch(p.Name))
+                throw new ParameterValidationException($"Invalid parameter name '{p.Name}'.");
+            if (!declared.TryAdd(p.Name, p))
+                throw new ParameterValidationException($"Duplicate parameter '{p.Name}'.");
+        }
+
+        return declared;
+    }
+
+    private static string SubstitutionNeedsPattern(string name) =>
+        $"Parameter '{name}' is substituted into the script, so it must declare a validating " +
+        $"pattern. Read it from the environment instead (${{env:{EnvPrefix}{name.ToUpperInvariant()}}}) " +
+        "to avoid the restriction.";
+
     /// <summary>
     /// cmd expands <c>%VAR%</c> while parsing the line, so a value containing <c>&amp;</c>,
     /// <c>|</c> or <c>&gt;</c> becomes a second command — the environment is <em>not</em>
@@ -130,10 +180,7 @@ public static class ParameterBinder
                     $"Script references '{{{{{name}}}}}' but no such parameter is declared.");
 
             if (string.IsNullOrEmpty(def.Pattern))
-                throw new ParameterValidationException(
-                    $"Parameter '{name}' is substituted into the script, so it must declare a " +
-                    "validating pattern. Read it from the environment instead " +
-                    $"(${{env:{EnvPrefix}{name.ToUpperInvariant()}}}) to avoid the restriction.");
+                throw new ParameterValidationException(SubstitutionNeedsPattern(name));
 
             var value = values[name];
 

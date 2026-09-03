@@ -10,6 +10,7 @@ namespace QuickJack.App.ViewModels;
 
 public sealed partial class OutputLineViewModel(OutputLine line)
 {
+    public OutputLine Raw { get; } = line;
     public string Text { get; } = line.Text;
     public OutputStream Stream { get; } = line.Stream;
     public bool IsError => Stream == OutputStream.StdErr;
@@ -44,6 +45,8 @@ public sealed partial class RunViewModel : ObservableObject
         _ = PumpAsync();
     }
 
+    public string RunId => _handle.RunId;
+    public string CommandId => _handle.Command.Id;
     public string CommandName { get; }
     public DateTimeOffset Started { get; }
     public ObservableCollection<OutputLineViewModel> Lines { get; } = [];

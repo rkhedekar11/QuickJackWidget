@@ -193,6 +193,20 @@ public sealed partial class WidgetViewModel : ObservableObject
         Refresh();
     }
 
+    /// <summary>
+    /// Runs a command on behalf of the HTTP API. It goes through exactly the same runner,
+    /// approval check and output panel as a click — there is one execution path, not two.
+    /// Must be called on the UI thread.
+    /// </summary>
+    public RunViewModel StartForApi(CommandDef command, IReadOnlyDictionary<string, string>? arguments)
+    {
+        var run = new RunViewModel(_runner.Start(command, arguments));
+        CurrentRun = run;
+        Mode = PaletteMode.Output;
+        StatusMessage = null;
+        return run;
+    }
+
     private void Execute(CommandItemViewModel item, IReadOnlyDictionary<string, string>? arguments)
     {
         try

@@ -3,7 +3,7 @@
 A floating, always-on-top command launcher for Windows. A small orb sits over every window;
 clicking it (or a global hotkey) expands a searchable palette of saved PowerShell / cmd
 commands. Commands can run elevated. A loopback HTTP API lets any script register a new
-command, which appears on the widget immediately.
+command, which appears on the widget immediately - see [API.md](API.md) for using it.
 
 **Target:** .NET 10, WPF. Build and run with:
 
@@ -187,7 +187,8 @@ and UAC-declined cases stay on the manual checklist.
 - [x] **M1 Skeleton** — solution, projects, `CommandDef`, `CommandStore`.
 - [x] **M2 Execution** — runners, parameter binding, streaming output. 96 tests.
 - [x] **M3 Widget shell** — orb, drag, edge snap, palette, tray, hotkey. Verified end to end.
-- [ ] **M4 API** — Kestrel, token auth, CRUD + run, guardrails, approval flow.
+- [x] **M4 API** — Kestrel, token auth, CRUD + run, SSE, guardrails, approval flow. 27 tests.
+      Documented in `API.md`.
 - [ ] **M5 Agent** — pipe, pinned store, scheduled task installer, audit log.
 
 M2 and M3 were swapped relative to the original plan: building execution first means the
