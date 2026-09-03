@@ -1,13 +1,12 @@
 # TODO
 
-## M3 — Widget shell (next)
+## M3 — Widget shell (done, but gaps)
 
-- [ ] Orb window: borderless, transparent, topmost, `WS_EX_TOOLWINDOW`
-- [ ] Drag with click/drag threshold; edge snapping per monitor
-- [ ] Survive `DisplaySettingsChanged` — clamp back into a visible work area
-- [ ] Expanding palette + fuzzy search
-- [ ] Streaming output panel: exit code, duration, copy
-- [ ] Tray icon (WinForms `NotifyIcon`), global hotkey, autostart via `HKCU\...\Run`
+- [ ] **Settings UI** — hot key, autostart, approval toggle, add/edit a command by hand.
+      Everything is currently editable only by hand in `settings.json`.
+- [ ] Group headers in the palette list (grouping is modelled but not rendered)
+- [ ] Auto-scroll the output panel to the newest line
+- [ ] Tests for `FuzzyMatcher` scoring order
 
 ## M4 — API
 

@@ -142,6 +142,34 @@ the injection problem `ParameterBinder` exists to prevent.
 `$child.ExitCode` reads back as 0 whatever the process returned. The wrapper touches
 `$child.Handle` to cache it. Do not remove that line; two tests depend on it.
 
+**`InvariantGlobalization` must stay off.** WPF data binding calls
+`XmlLanguage.GetSpecificCulture()` and throws `Cannot find non-neutral culture related to
+'en-us'` without real culture data — the window never renders and, because `OnStartup` is
+`async void`, nothing reports it. It was in `Directory.Build.props` as a reflex; it is gone.
+
+**No DWM backdrop on the widget window.** `DWMWA_SYSTEMBACKDROP_TYPE` paints the whole window
+rectangle, which fights `AllowsTransparency` and turns the round orb into a grey square.
+The window paints its own dark surface instead.
+
+**Positioning uses physical pixels via `SetWindowPos`, not `Window.Left`/`Top`.** WPF's
+device-independent units get slippery across monitors with different scaling; screen bounds
+come from WinForms `Screen` in the same physical units, so no conversion is involved.
+
+**`UseWindowsForms` alongside `UseWPF` collides on common type names.** `Application`,
+`MouseEventArgs`, `KeyEventArgs`, `ButtonBase`, `TextBoxBase` and `Clipboard` exist in both.
+`GlobalUsings.cs` aliases each to the WPF one; the tray icon and `Screen` name the WinForms
+type explicitly.
+
+**Startup is logged to `%APPDATA%\QuickJack\app.log`.** A tray app has no console and no
+window to print to, so a startup failure is otherwise completely silent. `OnStartup` is
+`async void`, so its body is wrapped in a try/catch that logs and shows a message rather
+than failing invisibly — this is how the globalization bug above was found in one run.
+
+**The hot key falls back rather than failing.** Ctrl+Alt+Space is frequently taken (IME and
+emoji pickers claim it — it was taken on the dev machine). `HotKeyService.Attach` walks a
+short fallback list and reports which combination it actually got, because a hot key that
+silently does nothing, with no settings UI yet to change it, is a dead end.
+
 **Cancelling an elevated run goes through a sentinel file, not `Process.Kill`.** A
 medium-integrity process cannot kill a high-integrity one, so the widget writes a `cancel`
 file and the elevated wrapper — which *can* kill its own child — does it, with `taskkill /T`
@@ -158,7 +186,7 @@ and UAC-declined cases stay on the manual checklist.
 
 - [x] **M1 Skeleton** — solution, projects, `CommandDef`, `CommandStore`.
 - [x] **M2 Execution** — runners, parameter binding, streaming output. 96 tests.
-- [ ] **M3 Widget shell** — orb, drag, edge snap, palette, tray, hotkey, autostart.
+- [x] **M3 Widget shell** — orb, drag, edge snap, palette, tray, hotkey. Verified end to end.
 - [ ] **M4 API** — Kestrel, token auth, CRUD + run, guardrails, approval flow.
 - [ ] **M5 Agent** — pipe, pinned store, scheduled task installer, audit log.
 
