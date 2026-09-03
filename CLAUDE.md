@@ -71,8 +71,8 @@ npm, nvm) work without special handling.
 
 | Project | TFM | Role |
 |---|---|---|
-| `src/QuickJack.Core` | `net10.0` | models, stores, execution, IPC contracts — no UI, fully testable |
-| `src/QuickJack.Api` | `net10.0` | Kestrel endpoints (`FrameworkReference` on `Microsoft.AspNetCore.App`) |
+| `src/QuickJack.Core` | `net10.0-windows` | models, stores, execution, IPC contracts — no UI, fully testable |
+| `src/QuickJack.Api` | `net10.0-windows` | Kestrel endpoints (`FrameworkReference` on `Microsoft.AspNetCore.App`) |
 | `src/QuickJack.App` | `net10.0-windows` | WPF widget; `UseWPF` + `UseWindowsForms` (tray icon) |
 | `src/QuickJack.Agent` | `net10.0-windows` | elevated pipe server |
 
@@ -114,20 +114,50 @@ and multi-line problems entirely and keeps user script text out of any command l
 
 **`Verb = "runas"` requires `UseShellExecute = true`, which forbids stream redirection.**
 These are mutually exclusive in Win32, so an elevated child's stdout *cannot* be captured
-directly. The UAC path therefore writes to a transcript file that the non-elevated widget
-tails. Worth knowing before touching `UacProcessRunner`.
+directly. The UAC path therefore elevates a wrapper script that starts the real script as
+its own child WITH redirection - to files - which the non-elevated widget tails.
+Worth knowing before touching `UacProcessRunner`.
 
 **Parameters bind to environment variables (`QJ_<NAME>`) by default.** Nothing is spliced
 into script text. Inline `{{name}}` substitution is supported because people reach for it,
-but only for parameters declaring a validating `Pattern`. `ParameterBinder` is the single
-most security-relevant piece of logic in the app; treat its tests as load-bearing.
+but only for parameters declaring a validating `Pattern`, and the value must additionally be
+free of control characters — a permissive pattern like `[\s\S]*` would otherwise let a
+newline smuggle in a second command. `ParameterBinder` is the single most security-relevant
+piece of logic in the app; treat its tests as load-bearing.
+
+**In cmd, `%QJ_NAME%` is not safe and is rejected.** cmd expands `%VAR%` *before* parsing the
+line, so a value containing `&` or `|` runs as a second command — the environment is not
+inert in cmd the way `$env:X` is in PowerShell. The cmd preamble therefore enables delayed
+expansion, scripts must read parameters as `!QJ_NAME!` (which expands after parsing), and
+`ParameterBinder` refuses to bind a cmd script using the `%`-form. Found by a test that
+expected the value to be echoed verbatim and got it executed instead.
+
+**The elevated wrapper never has values interpolated into its source.** Parameter values go
+into a JSON file the wrapper reads; paths that do reach its source (the interpreter,
+`WorkingDirectory` — which the API can set) go through `Ps.Quote`, where doubling the single
+quote is a complete escape. Generating PowerShell around user text would reintroduce exactly
+the injection problem `ParameterBinder` exists to prevent.
+
+**`Start-Process -PassThru` loses the exit code.** PowerShell releases the process handle, so
+`$child.ExitCode` reads back as 0 whatever the process returned. The wrapper touches
+`$child.Handle` to cache it. Do not remove that line; two tests depend on it.
+
+**Cancelling an elevated run goes through a sentinel file, not `Process.Kill`.** A
+medium-integrity process cannot kill a high-integrity one, so the widget writes a `cancel`
+file and the elevated wrapper — which *can* kill its own child — does it, with `taskkill /T`
+so the whole tree goes.
+
+**`UacProcessRunner` has an `elevate: false` test seam.** It launches the wrapper without the
+runas verb, so wrapper generation, output tailing, cancellation and exit-code recovery are
+all covered by automated tests; only the ShellExecute verb differs. The genuinely-elevated
+and UAC-declined cases stay on the manual checklist.
 
 ---
 
 ## Status
 
-- [x] **M1 Skeleton** — solution, projects, `CommandDef`, `CommandStore`, 29 tests.
-- [ ] **M2 Execution** — runners, parameter binding, streaming output.
+- [x] **M1 Skeleton** — solution, projects, `CommandDef`, `CommandStore`.
+- [x] **M2 Execution** — runners, parameter binding, streaming output. 96 tests.
 - [ ] **M3 Widget shell** — orb, drag, edge snap, palette, tray, hotkey, autostart.
 - [ ] **M4 API** — Kestrel, token auth, CRUD + run, guardrails, approval flow.
 - [ ] **M5 Agent** — pipe, pinned store, scheduled task installer, audit log.

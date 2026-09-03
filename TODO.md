@@ -1,15 +1,6 @@
 # TODO
 
-## M2 — Execution (in progress)
-
-- [ ] `OutputLine`, `RunHandle`, `RunStatus` contracts in `Core/Execution`
-- [ ] `ParameterBinder` — env-var binding, gated `{{name}}` substitution, injection tests
-- [ ] `ScriptWriter` — temp `.ps1` / `.cmd` emission, UTF-8, cleanup
-- [ ] `LocalProcessRunner` — streaming, exit code, timeout, cancel whole process tree
-- [ ] `UacProcessRunner` — transcript tailing, cancelled-dialog handling (error 1223)
-- [ ] `CommandRunnerFactory` dispatching on `ElevationMode`
-
-## M3 — Widget shell
+## M3 — Widget shell (next)
 
 - [ ] Orb window: borderless, transparent, topmost, `WS_EX_TOOLWINDOW`
 - [ ] Drag with click/drag threshold; edge snapping per monitor
