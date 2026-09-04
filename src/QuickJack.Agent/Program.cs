@@ -16,6 +16,12 @@ public static class Program
         if (args.Contains("--secure-store", StringComparer.OrdinalIgnoreCase))
             return SecureStore(paths, log, args);
 
+        if (Argument(args, "--pin") is { } toPin)
+            return await PinAsync(paths, log, toPin, pin: true);
+
+        if (Argument(args, "--unpin") is { } toUnpin)
+            return await PinAsync(paths, log, toUnpin, pin: false);
+
         if (!WindowsAcl.IsCurrentProcessElevated())
         {
             log.Error("The agent must run elevated. It is normally started by its scheduled task.");
@@ -35,6 +41,82 @@ public static class Program
             log.Error("Agent terminated unexpectedly", ex);
             return 1;
         }
+    }
+
+    /// <summary>
+    /// One-shot pin or unpin, invoked elevated by the widget. This is the only way an
+    /// <see cref="ElevationMode.Agent"/> command comes into existence, and it costs a UAC
+    /// prompt every time — which is what stops anything running merely as the user from
+    /// giving itself a silent administrator button.
+    /// <para>
+    /// It takes an <em>id</em> and reads the command out of the user's own store itself. The
+    /// caller never hands it script text, for the same reason the running agent never
+    /// accepts any: a caller that could supply the body could pin whatever it liked behind
+    /// a prompt the user thought was for something else.
+    /// </para>
+    /// </summary>
+    private static async Task<int> PinAsync(QuickJackPaths paths, AgentLog log, string id, bool pin)
+    {
+        if (!WindowsAcl.IsCurrentProcessElevated())
+        {
+            Console.Error.WriteLine("Pinning requires administrator.");
+            return 2;
+        }
+
+        try
+        {
+            if (!pin)
+            {
+                var removed = PinnedStore.Unpin(paths, id);
+                log.Info(removed ? $"Unpinned '{id}'." : $"Asked to unpin '{id}', which was not pinned.");
+                return removed ? 0 : 3;
+            }
+
+            // Pinning before the agent is installed is allowed, but a pinned store the user
+            // can write to is worth nothing, so lock it down first.
+            if (!PinnedStore.IsDirectorySecured(paths)) PinnedStore.SecureDirectory(paths);
+
+            using var store = new CommandStore(paths);
+            await store.ReloadAsync();
+
+            var command = store.Find(id);
+            if (command is null)
+            {
+                Console.Error.WriteLine($"No command with id '{id}'.");
+                log.Error($"Asked to pin '{id}', which does not exist.");
+                return 3;
+            }
+
+            PinnedStore.Pin(paths, command);
+
+            // The audit trail: what was pinned, and what it will run.
+            log.Info($"Pinned '{command.Id}' ({command.Name}) for no-prompt elevation. " +
+                     $"Shell: {command.Shell}. Script: {Summarise(command.Script)}");
+
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            log.Error(pin ? $"Could not pin '{id}'" : $"Could not unpin '{id}'", ex);
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    /// <summary>One line of the script, for the log. Enough to recognise, not a transcript.</summary>
+    private static string Summarise(string script)
+    {
+        var flattened = string.Join(" ⏎ ", script
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+        return flattened.Length <= 200 ? flattened : flattened[..200] + "…";
+    }
+
+    /// <summary>The value following <paramref name="name"/>, or null if it is not present.</summary>
+    private static string? Argument(string[] args, string name)
+    {
+        var index = Array.FindIndex(args, a => a.Equals(name, StringComparison.OrdinalIgnoreCase));
+        return index >= 0 && index + 1 < args.Length ? args[index + 1].Trim() : null;
     }
 
     /// <summary>

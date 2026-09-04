@@ -201,6 +201,16 @@ own tasks, so a second command does not look like "the agent is not running" unt
 finishes. When a connection drops, its runs are cancelled: nothing is left to receive their
 output, and an elevated process nobody can see or stop is what this design must not leave.
 
+**Pinning goes through the same elevated helper as installation, and takes an id.**
+`QuickJack.Agent --pin <id>` runs elevated via ShellExecute `runas` — one UAC prompt per pin,
+which is the cost that makes a no-prompt button something the user granted rather than
+something a script arranged. It is handed an id and reads the definition out of the user's
+own store itself, for the same reason the running agent does: a caller that could supply the
+script body could pin something other than what the user was shown before the prompt. Pin
+copies rather than moves, so the user-store original survives and unpinning is a complete
+undo. `PinnedStore.Pin` refuses an unapproved command — promoting something the user has
+never reviewed straight to silent administrator is what the approval gate exists to stop.
+
 **Cancelling waits for the agent to confirm.** The client used to fire the cancel message
 from a token registration and immediately dispose the pipe, racing the write against the
 teardown — so the elevated process could survive a cancel with nothing left able to stop it.
@@ -218,10 +228,11 @@ the command may still be running if the agent never answers.
       Documented in `API.md`.
 - [~] **M5 Agent** — IN PROGRESS. Pipe protocol, pinned store, agent server, AgentRunner and
       the scheduled-task installer are written. 42 tests now drive the real client against a
-      real agent over a real pipe, in-process; they found four bugs, all listed above. Still
-      outstanding: **the pin/unpin UI** (nothing can be pinned yet, so the agent has nothing
-      to run) and **the genuinely elevated path, which has still never been executed** — see
-      TODO.md.
+      real agent over a real pipe, in-process; they found four bugs, all listed above. Pin
+      and unpin are wired up end to end: right-click a command or press Ctrl+P, confirm what
+      it means, and one UAC prompt writes it to the pinned store. 145 tests.
+      Still outstanding: **the genuinely elevated path has never been executed** — installing
+      the agent, and pinning, both need a real UAC click. See TODO.md.
 
 M2 and M3 were swapped relative to the original plan: building execution first means the
 widget binds to real commands and real output on day one, instead of a hardcoded list that

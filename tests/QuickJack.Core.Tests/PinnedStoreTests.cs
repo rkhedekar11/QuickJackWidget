@@ -73,6 +73,112 @@ public class PinnedStoreTests
         Assert.Equal(["three"], PinnedStore.Read(root.Paths).Select(c => c.Id));
     }
 
+    // ---- pinning ----
+
+    [Fact]
+    public void Pinning_marks_a_command_for_no_prompt_elevation()
+    {
+        using var root = new TempRoot();
+
+        var pinned = PinnedStore.Pin(root.Paths, new CommandDef
+        {
+            Id = "flush-dns",
+            Name = "Flush DNS",
+            Script = "ipconfig /flushdns",
+            Elevation = ElevationMode.Uac,
+        });
+
+        Assert.Equal(ElevationMode.Agent, pinned.Elevation);
+        Assert.Equal(ElevationMode.Agent, PinnedStore.Find(root.Paths, "flush-dns")?.Elevation);
+    }
+
+    [Fact]
+    public void Pinning_the_same_id_twice_replaces_rather_than_duplicates()
+    {
+        using var root = new TempRoot();
+
+        PinnedStore.Pin(root.Paths, Command("job") with { Script = "first" });
+        PinnedStore.Pin(root.Paths, Command("job") with { Script = "second" });
+
+        var command = Assert.Single(PinnedStore.Read(root.Paths));
+        Assert.Equal("second", command.Script);
+    }
+
+    [Fact]
+    public void Pinning_leaves_the_other_pinned_commands_alone()
+    {
+        using var root = new TempRoot();
+
+        PinnedStore.Pin(root.Paths, Command("one"));
+        PinnedStore.Pin(root.Paths, Command("two"));
+
+        Assert.Equal(["one", "two"], PinnedStore.Read(root.Paths).Select(c => c.Id).Order());
+    }
+
+    [Fact]
+    public void An_unapproved_command_cannot_be_pinned()
+    {
+        // Pinning promotes a command to silent administrator. Doing that to something the
+        // user has never reviewed is exactly what the approval gate exists to stop.
+        using var root = new TempRoot();
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => PinnedStore.Pin(root.Paths, Command("planted") with { Approved = false }));
+
+        Assert.Contains("approved", ex.Message);
+        Assert.Empty(PinnedStore.Read(root.Paths));
+    }
+
+    [Fact]
+    public void Unpinning_removes_the_command()
+    {
+        using var root = new TempRoot();
+        PinnedStore.Pin(root.Paths, Command("one"));
+        PinnedStore.Pin(root.Paths, Command("two"));
+
+        Assert.True(PinnedStore.Unpin(root.Paths, "ONE"));
+        Assert.Equal(["two"], PinnedStore.Read(root.Paths).Select(c => c.Id));
+    }
+
+    [Fact]
+    public void Unpinning_something_that_is_not_pinned_reports_false()
+    {
+        using var root = new TempRoot();
+
+        Assert.False(PinnedStore.Unpin(root.Paths, "never-pinned"));
+    }
+
+    [Fact]
+    public async Task Pinning_shadows_the_user_copy_and_unpinning_gives_it_back()
+    {
+        // Pin promotes a copy; the original stays in the user store. That is what makes
+        // unpinning a safe, complete undo.
+        using var root = new TempRoot();
+        using var store = new CommandStore(root.Paths);
+
+        await store.UpsertAsync(new CommandDef
+        {
+            Id = "flush-dns",
+            Name = "Flush DNS",
+            Script = "ipconfig /flushdns",
+            Elevation = ElevationMode.Uac,
+        });
+
+        PinnedStore.Pin(root.Paths, store.Find("flush-dns")!);
+        await store.ReloadAsync();
+
+        var afterPin = store.Find("flush-dns")!;
+        Assert.Equal(CommandOrigin.Pinned, afterPin.Origin);
+        Assert.Equal(ElevationMode.Agent, afterPin.Elevation);
+
+        PinnedStore.Unpin(root.Paths, "flush-dns");
+        await store.ReloadAsync();
+
+        var afterUnpin = store.Find("flush-dns")!;
+        Assert.Equal(CommandOrigin.User, afterUnpin.Origin);
+        Assert.Equal(ElevationMode.Uac, afterUnpin.Elevation);
+    }
+
     // ---- the recorded client ----
 
     [Fact]

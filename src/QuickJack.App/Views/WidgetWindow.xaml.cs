@@ -264,12 +264,32 @@ public partial class WidgetWindow : Window
                 _viewModel.SubmitParametersCommand.Execute(null);
                 e.Handled = true;
                 break;
+
+            // Pin toggles: the command itself unpins something already pinned.
+            case Key.P when _viewModel.Mode == PaletteMode.Browsing &&
+                            (Keyboard.Modifiers & ModifierKeys.Control) != 0:
+                _viewModel.PinCommand.Execute(null);
+                e.Handled = true;
+                break;
         }
     }
 
     private void ScrollSelectionIntoView()
     {
         if (_viewModel.Selected is not null) CommandList.ScrollIntoView(_viewModel.Selected);
+    }
+
+    /// <summary>
+    /// Selects the row under the pointer before its context menu opens. WPF does not select
+    /// on right-click, so without this the menu would act on whatever was selected before.
+    /// </summary>
+    private void OnListRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is DependencyObject source &&
+            ItemsControl.ContainerFromElement(CommandList, source) is ListBoxItem row)
+        {
+            row.IsSelected = true;
+        }
     }
 
     private void OnListDoubleClick(object sender, MouseButtonEventArgs e) =>

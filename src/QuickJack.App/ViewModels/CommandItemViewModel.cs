@@ -17,6 +17,15 @@ public sealed partial class CommandItemViewModel(CommandDef command) : Observabl
     public bool NeedsApproval => !Command.Approved;
     public bool HasParameters => Command.Parameters.Count > 0;
 
+    /// <summary>Pinned by an administrator, so it runs elevated with no prompt.</summary>
+    public bool IsPinned => Command.Origin == CommandOrigin.Pinned;
+
+    /// <summary>
+    /// Whether "pin" is worth offering. An unapproved command must be reviewed first, and a
+    /// command that is already pinned has nowhere further to go.
+    /// </summary>
+    public bool CanPin => !IsPinned && !NeedsApproval;
+
     /// <summary>Short badge shown on the right of the row.</summary>
     public string? Badge => Command.Elevation switch
     {

@@ -29,6 +29,16 @@ public sealed class BoolToVisibilityConverter : IValueConverter
         throw new NotSupportedException();
 }
 
+/// <summary>The opposite of the bound boolean. Used to disable a button while busy.</summary>
+public sealed class NegateConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is not true;
+
+    public object ConvertBack(object? value, Type t, object? p, CultureInfo c) =>
+        value is not true;
+}
+
 /// <summary>Visible when the bound value is neither null nor an empty string.</summary>
 public sealed class NotEmptyToVisibilityConverter : IValueConverter
 {

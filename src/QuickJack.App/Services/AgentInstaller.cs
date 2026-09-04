@@ -6,8 +6,6 @@ using QuickJack.Core.Storage;
 
 namespace QuickJack.App.Services;
 
-public sealed record InstallResult(bool Success, string Message);
-
 /// <summary>
 /// Installs and removes the elevated agent.
 /// <para>
@@ -25,13 +23,12 @@ public sealed record InstallResult(bool Success, string Message);
 public static class AgentInstaller
 {
     public const string TaskName = "QuickJack\\Agent";
-    private const int ErrorCancelled = 1223;
 
     public static bool IsInstalled()
     {
         try
         {
-            using var process = Start("schtasks.exe", ["/query", "/tn", TaskName], elevated: false, capture: true);
+            using var process = Elevated.Start("schtasks.exe", ["/query", "/tn", TaskName], elevated: false, capture: true);
             if (process is null) return false;
 
             process.WaitForExit(5000);
@@ -66,7 +63,7 @@ public static class AgentInstaller
 
     public static InstallResult Install(QuickJackPaths paths)
     {
-        var agentExe = AgentExecutablePath();
+        var agentExe = Elevated.SiblingExecutable("QuickJack.Agent.exe");
         if (agentExe is null || !File.Exists(agentExe))
             return new InstallResult(false, "QuickJack.Agent.exe was not found next to the widget.");
 
@@ -76,7 +73,7 @@ public static class AgentInstaller
 
         // One elevated call does both halves of the setup: lock down the pinned store, and
         // record which executable the agent will accept connections from.
-        var secured = RunElevatedAndWait(agentExe, ["--secure-store", "--client", widgetExe]);
+        var secured = Elevated.RunAndWait(agentExe, ["--secure-store", "--client", widgetExe]);
         if (!secured.Success) return secured;
 
         var xml = BuildTaskXml(agentExe);
@@ -86,13 +83,13 @@ public static class AgentInstaller
         {
             File.WriteAllText(xmlPath, xml, new System.Text.UnicodeEncoding(false, true));
 
-            var created = RunElevatedAndWait("schtasks.exe",
+            var created = Elevated.RunAndWait("schtasks.exe",
                 ["/create", "/tn", TaskName, "/xml", xmlPath, "/f"]);
 
             if (!created.Success) return created;
 
             // Start it now so the user does not have to sign out and back in.
-            RunElevatedAndWait("schtasks.exe", ["/run", "/tn", TaskName]);
+            Elevated.RunAndWait("schtasks.exe", ["/run", "/tn", TaskName]);
 
             return new InstallResult(true, "The agent is installed and running.");
         }
@@ -108,62 +105,14 @@ public static class AgentInstaller
 
     public static InstallResult Uninstall()
     {
-        var ended = RunElevatedAndWait("schtasks.exe", ["/end", "/tn", TaskName]);
+        var ended = Elevated.RunAndWait("schtasks.exe", ["/end", "/tn", TaskName]);
         _ = ended; // an agent that is not running is not an error
 
-        var deleted = RunElevatedAndWait("schtasks.exe", ["/delete", "/tn", TaskName, "/f"]);
+        var deleted = Elevated.RunAndWait("schtasks.exe", ["/delete", "/tn", TaskName, "/f"]);
 
         return deleted.Success
             ? new InstallResult(true, "The agent has been removed.")
             : deleted;
-    }
-
-    private static InstallResult RunElevatedAndWait(string exe, string[] args)
-    {
-        try
-        {
-            using var process = Start(exe, args, elevated: true, capture: false);
-            if (process is null) return new InstallResult(false, $"Could not start {exe}.");
-
-            process.WaitForExit(60_000);
-
-            return process.ExitCode == 0
-                ? new InstallResult(true, string.Empty)
-                : new InstallResult(false, $"{Path.GetFileName(exe)} exited with code {process.ExitCode}.");
-        }
-        catch (Win32Exception ex) when (ex.NativeErrorCode == ErrorCancelled)
-        {
-            // Declining the prompt is a decision, not a failure.
-            return new InstallResult(false, "Cancelled: administrator consent was declined.");
-        }
-        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
-        {
-            return new InstallResult(false, ex.Message);
-        }
-    }
-
-    private static Process? Start(string exe, string[] args, bool elevated, bool capture)
-    {
-        var psi = new ProcessStartInfo
-        {
-            FileName = exe,
-            UseShellExecute = elevated,
-            CreateNoWindow = true,
-            WindowStyle = ProcessWindowStyle.Hidden,
-            RedirectStandardOutput = capture && !elevated,
-            RedirectStandardError = capture && !elevated,
-        };
-
-        if (elevated) psi.Verb = "runas";
-        foreach (var arg in args) psi.ArgumentList.Add(arg);
-
-        return Process.Start(psi);
-    }
-
-    private static string? AgentExecutablePath()
-    {
-        var directory = Path.GetDirectoryName(Environment.ProcessPath);
-        return directory is null ? null : Path.Combine(directory, "QuickJack.Agent.exe");
     }
 
     /// <summary>

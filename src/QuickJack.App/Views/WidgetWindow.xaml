@@ -20,6 +20,7 @@
         <views:EqualsToVisibilityConverter x:Key="Eq" />
         <views:BoolToVisibilityConverter x:Key="Bool" />
         <views:NotEmptyToVisibilityConverter x:Key="NotEmpty" />
+        <views:NegateConverter x:Key="Not" />
     </Window.Resources>
 
     <Grid>
@@ -108,7 +109,26 @@
                              SelectedItem="{Binding Selected}"
                              Background="Transparent" BorderThickness="0"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                             MouseDoubleClick="OnListDoubleClick">
+                             MouseDoubleClick="OnListDoubleClick"
+                             PreviewMouseRightButtonDown="OnListRightButtonDown">
+                        <!-- Acts on the selected row, which the right-click handler sets first. -->
+                        <ListBox.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Run" Command="{Binding ActivateCommand}" />
+                                <Separator />
+                                <MenuItem Header="Pin for no-prompt admin…"
+                                          Command="{Binding PinCommand}"
+                                          Visibility="{Binding Selected.CanPin,
+                                              Converter={StaticResource Bool}}" />
+                                <MenuItem Header="Unpin"
+                                          Command="{Binding UnpinCommand}"
+                                          Visibility="{Binding Selected.IsPinned,
+                                              Converter={StaticResource Bool}}" />
+                                <Separator />
+                                <MenuItem Header="Delete" Command="{Binding DeleteCommand}" />
+                            </ContextMenu>
+                        </ListBox.ContextMenu>
+
                         <ListBox.ItemContainerStyle>
                             <Style TargetType="ListBoxItem">
                                 <Setter Property="Padding" Value="0" />
@@ -247,7 +267,8 @@
                                    MaxHeight="140" />
                     </Border>
                     <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
-                        <Button Content="Approve and run" Style="{StaticResource PrimaryButton}"
+                        <Button Content="{Binding ConfirmLabel}" Style="{StaticResource PrimaryButton}"
+                                IsEnabled="{Binding IsBusy, Converter={StaticResource Not}}"
                                 Command="{Binding ConfirmCommand}" />
                         <Button Content="Not now" Style="{StaticResource IconButton}"
                                 Command="{Binding BackCommand}" Margin="6,0,0,0" />
@@ -333,7 +354,7 @@
                                    Visibility="{Binding StatusMessage, Converter={StaticResource NotEmpty}}" />
                         <TextBlock FontSize="11" Foreground="{StaticResource TextFaint}"
                                    HorizontalAlignment="Right"
-                                   Text="↑↓ select · ⏎ run · Esc close" />
+                                   Text="↑↓ select · ⏎ run · Ctrl+P pin · Esc close" />
                     </Grid>
                 </Border>
             </Grid>

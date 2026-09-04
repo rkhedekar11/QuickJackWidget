@@ -48,6 +48,59 @@ public static class PinnedStore
     }
 
     /// <summary>
+    /// Adds or replaces one command in the pinned store, marking it for no-prompt elevation.
+    /// Requires administrator, which is exactly the cost this design puts on creating a
+    /// button that runs as admin without asking.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// The command has not been approved. An unapproved command is one someone else
+    /// registered and the user has never looked at; promoting it straight to silent
+    /// administrator is the escalation the approval gate exists to prevent.
+    /// </exception>
+    public static CommandDef Pin(QuickJackPaths paths, CommandDef command)
+    {
+        if (!command.Approved)
+        {
+            throw new InvalidOperationException(
+                $"'{command.Name}' has not been approved yet, so it cannot be pinned.");
+        }
+
+        // Read through CommandFileIo, not Read(): that one turns an unreadable store into an
+        // empty list, which here would silently drop every other pinned command.
+        var file = CommandFileIo.Read(paths.PinnedCommands);
+
+        var entry = command with
+        {
+            Elevation = ElevationMode.Agent,
+            Origin = CommandOrigin.Pinned,
+            Approved = true,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        };
+
+        var index = file.Commands.FindIndex(c => IdEquals(c.Id, command.Id));
+        if (index >= 0) file.Commands[index] = entry;
+        else file.Commands.Add(entry);
+
+        Directory.CreateDirectory(paths.MachineDirectory);
+        CommandFileIo.Write(paths.PinnedCommands, file);
+        return entry;
+    }
+
+    /// <summary>Removes a command from the pinned store. Requires administrator.</summary>
+    /// <returns>False if it was not pinned in the first place.</returns>
+    public static bool Unpin(QuickJackPaths paths, string id)
+    {
+        var file = CommandFileIo.Read(paths.PinnedCommands);
+        if (file.Commands.RemoveAll(c => IdEquals(c.Id, id)) == 0) return false;
+
+        CommandFileIo.Write(paths.PinnedCommands, file);
+        return true;
+    }
+
+    private static bool IdEquals(string a, string b) =>
+        string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
     /// Locks the machine directory to Administrators-write / Users-read. Must be called from
     /// an elevated process; it is part of agent installation.
     /// </summary>

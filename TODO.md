@@ -35,11 +35,11 @@ Outstanding:
       CLAUDE.md: zero-size pipe buffers block every write; `FlushAsync` on a pipe waits for
       the peer; the agent could not read a `Cancel` during a run; the client raced its
       cancel against disposing the pipe.
-- [ ] **Pin/unpin UI** - there is no way to pin a command yet, so the agent has nothing to
-      run. This is the missing user-facing half of M5. Needs: a "pin" action in the palette
-      or settings that elevates once to write `pinned.json`, and an "unpin" that does the
-      reverse. `PinnedStore.Write` already requires administrator; the UI has to shell out
-      to an elevated helper the way `AgentInstaller` does.
+- [x] **Pin/unpin UI** - right-click a command in the palette, or Ctrl+P. The confirm pane
+      says what pinning means and what the command will run, then one UAC prompt runs
+      `QuickJack.Agent --pin <id>`, which reads the definition from the user store itself
+      and writes `pinned.json`. Unpin is the same in reverse. `Elevated` is now shared by
+      the installer and `PinService`.
 - [ ] `IsDirectorySecured`'s users-can-write branch is unreachable from a test: it is only
       reached for an Administrators-owned directory, and creating one needs elevation.
       Covered by the manual checklist instead.
@@ -66,3 +66,10 @@ Run after M3, and again after any window-management change.
 - [ ] `curl` with `"elevation":"agent"` is refused with 403
 - [ ] Agent install prompts once; a pinned command then runs with no prompt and is logged
 - [ ] Agent uninstall removes the scheduled task cleanly
+- [ ] Ctrl+P on a command explains what pinning means, then prompts once; the row's badge
+      turns to `admin*` without a restart, and `pinned.json` names it
+- [ ] Declining that prompt leaves the command unpinned and says "consent was declined"
+- [ ] `%ProgramData%\QuickJack` is Administrators-owned afterwards, and a non-elevated
+      `notepad` cannot save over `pinned.json`
+- [ ] Unpin restores the original user-store command, elevation and all
+- [ ] Pinning is refused for a command that is still awaiting approval

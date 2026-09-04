@@ -3,6 +3,7 @@ using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using QuickJack.App.Search;
+using QuickJack.App.Services;
 using QuickJack.Core.Execution;
 using QuickJack.Core.Models;
 using QuickJack.Core.Storage;
@@ -15,6 +16,15 @@ public enum PaletteMode
     CollectingParameters,
     Confirming,
     Output,
+}
+
+/// <summary>What the confirm pane is currently asking about.</summary>
+public enum PendingAction
+{
+    Run,
+    Approve,
+    Pin,
+    Unpin,
 }
 
 public sealed partial class ParameterInputViewModel(ParameterDef def) : ObservableObject
@@ -43,6 +53,21 @@ public sealed partial class WidgetViewModel : ObservableObject
     [ObservableProperty] private RunViewModel? _currentRun;
     [ObservableProperty] private CommandItemViewModel? _pending;
     [ObservableProperty] private string? _statusMessage;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ConfirmLabel))]
+    private PendingAction _pendingAction = PendingAction.Run;
+
+    [ObservableProperty] private bool _isBusy;
+
+    /// <summary>Label of the confirm pane's primary button; it does four different things.</summary>
+    public string ConfirmLabel => PendingAction switch
+    {
+        PendingAction.Approve => "Approve and run",
+        PendingAction.Pin => "Pin (asks for administrator)",
+        PendingAction.Unpin => "Unpin (asks for administrator)",
+        _ => "Run",
+    };
 
     public WidgetViewModel(CommandStore store, CommandRunner runner)
     {
@@ -102,6 +127,7 @@ public sealed partial class WidgetViewModel : ObservableObject
     {
         Mode = PaletteMode.Browsing;
         Pending = null;
+        PendingAction = PendingAction.Run;
         Parameters.Clear();
         StatusMessage = null;
     }
@@ -119,6 +145,7 @@ public sealed partial class WidgetViewModel : ObservableObject
         if (item.NeedsApproval)
         {
             Pending = item;
+            PendingAction = PendingAction.Approve;
             Mode = PaletteMode.Confirming;
             StatusMessage = $"{item.SourceText}. Approve it before it can run.";
             return;
@@ -136,6 +163,7 @@ public sealed partial class WidgetViewModel : ObservableObject
         if (item.Command.ConfirmBeforeRun)
         {
             Pending = item;
+            PendingAction = PendingAction.Run;
             Mode = PaletteMode.Confirming;
             StatusMessage = "This command asks for confirmation before it runs.";
             return;
@@ -152,6 +180,50 @@ public sealed partial class WidgetViewModel : ObservableObject
         Execute(Pending, Parameters.ToDictionary(p => p.Name, p => p.Value));
     }
 
+    // ---- pinning ----
+
+    /// <summary>
+    /// Asks first, then elevates. Pinning is the one action here that permanently removes a
+    /// consent dialog, so it gets its own explanation rather than going straight to UAC.
+    /// </summary>
+    [RelayCommand]
+    private void Pin(CommandItemViewModel? item)
+    {
+        item ??= Selected;
+        if (item is null) return;
+
+        if (item.IsPinned)
+        {
+            Unpin(item);
+            return;
+        }
+
+        if (item.NeedsApproval)
+        {
+            StatusMessage = "Approve this command before pinning it.";
+            return;
+        }
+
+        Pending = item;
+        PendingAction = PendingAction.Pin;
+        Mode = PaletteMode.Confirming;
+        StatusMessage = PinService.Warning(item.Command);
+    }
+
+    [RelayCommand]
+    private void Unpin(CommandItemViewModel? item)
+    {
+        item ??= Selected;
+        if (item is null || !item.IsPinned) return;
+
+        Pending = item;
+        PendingAction = PendingAction.Unpin;
+        Mode = PaletteMode.Confirming;
+        StatusMessage =
+            $"Unpin \"{item.Name}\"? It stops running as administrator without a prompt. " +
+            "This needs administrator too.";
+    }
+
     [RelayCommand]
     private async Task ConfirmAsync()
     {
@@ -159,22 +231,63 @@ public sealed partial class WidgetViewModel : ObservableObject
 
         var item = Pending;
 
-        if (item.NeedsApproval)
+        switch (PendingAction)
         {
-            await _store.UpsertAsync(item.Command with { Approved = true });
+            case PendingAction.Approve:
+                await _store.UpsertAsync(item.Command with { Approved = true });
+                Refresh();
+
+                var approved = Items.FirstOrDefault(i => i.Id == item.Id);
+                if (approved is not null)
+                {
+                    Back();
+                    Activate(approved);
+                }
+
+                return;
+
+            case PendingAction.Pin:
+                await ElevateAsync(() => PinService.Pin(item.Command));
+                return;
+
+            case PendingAction.Unpin:
+                await ElevateAsync(() => PinService.Unpin(item.Id));
+                return;
+
+            default:
+                Execute(item, null);
+                return;
+        }
+    }
+
+    /// <summary>
+    /// Runs something that raises a UAC prompt, off the UI thread. On the UI thread the
+    /// widget would freeze — repainting nothing — for as long as the dialog is up.
+    /// </summary>
+    private async Task ElevateAsync(Func<InstallResult> action)
+    {
+        IsBusy = true;
+        try
+        {
+            var result = await Task.Run(action);
+
+            StatusMessage = result.Message;
+
+            if (!result.Success) return;
+
+            // The pinned store is watched, but the watcher debounces and this is a direct
+            // consequence of a click; reload now so the badge changes immediately.
+            await _store.ReloadAsync();
             Refresh();
 
-            var approved = Items.FirstOrDefault(i => i.Id == item.Id);
-            if (approved is not null)
-            {
-                Back();
-                Activate(approved);
-            }
-
-            return;
+            Mode = PaletteMode.Browsing;
+            Pending = null;
+            PendingAction = PendingAction.Run;
         }
-
-        Execute(item, null);
+        finally
+        {
+            IsBusy = false;
+        }
     }
 
     [RelayCommand]
