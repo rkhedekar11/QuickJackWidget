@@ -14,9 +14,17 @@ namespace QuickJack.Core.Execution;
 /// arbitrary elevated code.
 /// </para>
 /// </summary>
-public sealed class AgentRunner : IAgentRunner
+/// <param name="pipeName">
+/// Overridden only by tests, which run a server of their own rather than the installed agent.
+/// </param>
+public sealed class AgentRunner(string? pipeName = null) : IAgentRunner
 {
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(3);
+
+    /// <summary>How long to wait for the agent to confirm it killed a cancelled run.</summary>
+    private static readonly TimeSpan CancelGrace = TimeSpan.FromSeconds(5);
+
+    private readonly string _pipeName = pipeName ?? PipeProtocol.PipeName();
 
     public RunHandle Start(
         CommandDef command,
@@ -31,11 +39,12 @@ public sealed class AgentRunner : IAgentRunner
         var channel = Channel.CreateUnbounded<OutputLine>();
         var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
-        var completion = ExecuteAsync(command, arguments, runId, channel.Writer, cts);
+        var completion = ExecuteAsync(_pipeName, command, arguments, runId, channel.Writer, cts);
         return new RunHandle(runId, command, channel.Reader, completion, cts);
     }
 
     private static async Task<RunResult> ExecuteAsync(
+        string pipeName,
         CommandDef command,
         IReadOnlyDictionary<string, string>? arguments,
         string runId,
@@ -49,7 +58,7 @@ public sealed class AgentRunner : IAgentRunner
             // CurrentUserOnly makes Windows verify the server runs as us, which stops a
             // lower-privileged process squatting the pipe name and impersonating the agent.
             using var pipe = new NamedPipeClientStream(
-                ".", PipeProtocol.PipeName(), PipeDirection.InOut,
+                ".", pipeName, PipeDirection.InOut,
                 PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
 
             try
@@ -71,12 +80,14 @@ public sealed class AgentRunner : IAgentRunner
                 Arguments = arguments?.ToDictionary(a => a.Key, a => a.Value),
             }, cts.Token);
 
-            // A cancel travels as its own message: only the elevated agent can kill an
-            // elevated process, so it has to do it on our behalf.
-            using var cancelRegistration = cts.Token.Register(() =>
-                _ = SendCancelAsync(pipe, runId));
-
-            return await PumpAsync(pipe, writer, started, cts.Token);
+            try
+            {
+                return await PumpAsync(pipe, writer, started, cts.Token);
+            }
+            catch (OperationCanceledException) when (cts.IsCancellationRequested)
+            {
+                return await CancelAsync(pipe, writer, runId, started);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -92,6 +103,42 @@ public sealed class AgentRunner : IAgentRunner
         {
             writer.TryComplete();
             cts.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Asks the agent to stop a run, then keeps reading until it says it has. Only the
+    /// elevated agent can kill an elevated process, so hanging up here instead — as sending
+    /// the cancel and closing the pipe would — leaves the process running with nothing left
+    /// able to stop it.
+    /// </summary>
+    private static async Task<RunResult> CancelAsync(
+        Stream pipe, ChannelWriter<OutputLine> writer, string runId, long started)
+    {
+        writer.TryWrite(OutputLine.Info("Cancelling…"));
+
+        await PipeProtocol.WriteAsync(pipe, new PipeMessage
+        {
+            Kind = PipeMessageKind.Cancel,
+            RunId = runId,
+        }, CancellationToken.None);
+
+        using var grace = new CancellationTokenSource(CancelGrace);
+
+        try
+        {
+            return await PumpAsync(pipe, writer, started, grace.Token);
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or IOException
+                                      or InvalidOperationException or ObjectDisposedException)
+        {
+            // The agent never confirmed. Report the cancellation, but say plainly that the
+            // elevated process may have survived it rather than implying it is gone.
+            writer.TryWrite(OutputLine.Err(
+                "The agent did not confirm the cancellation; the command may still be running."));
+
+            return new RunResult(RunState.Cancelled, null,
+                System.Diagnostics.Stopwatch.GetElapsedTime(started));
         }
     }
 
@@ -128,7 +175,8 @@ public sealed class AgentRunner : IAgentRunner
                         message.ExitCode,
                         message.DurationMs is { } ms
                             ? TimeSpan.FromMilliseconds(ms)
-                            : System.Diagnostics.Stopwatch.GetElapsedTime(started));
+                            : System.Diagnostics.Stopwatch.GetElapsedTime(started),
+                        state is RunState.Faulted ? message.Text : null);
 
                 case PipeMessageKind.Error:
                     return Fault(writer, started, message.Text ?? "The agent refused the request.");
@@ -136,22 +184,6 @@ public sealed class AgentRunner : IAgentRunner
                 default:
                     return Fault(writer, started, $"Unexpected message '{message.Kind}' from the agent.");
             }
-        }
-    }
-
-    private static async Task SendCancelAsync(Stream pipe, string runId)
-    {
-        try
-        {
-            await PipeProtocol.WriteAsync(pipe, new PipeMessage
-            {
-                Kind = PipeMessageKind.Cancel,
-                RunId = runId,
-            }, CancellationToken.None);
-        }
-        catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)
-        {
-            // The pipe is already gone, which means the run is already over.
         }
     }
 
@@ -163,12 +195,12 @@ public sealed class AgentRunner : IAgentRunner
     }
 
     /// <summary>True if an agent is currently listening.</summary>
-    public static async Task<bool> IsAvailableAsync()
+    public static async Task<bool> IsAvailableAsync(string? pipeName = null)
     {
         try
         {
             using var pipe = new NamedPipeClientStream(
-                ".", PipeProtocol.PipeName(), PipeDirection.InOut,
+                ".", pipeName ?? PipeProtocol.PipeName(), PipeDirection.InOut,
                 PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
 
             await pipe.ConnectAsync(300);

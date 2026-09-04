@@ -180,6 +180,33 @@ runas verb, so wrapper generation, output tailing, cancellation and exit-code re
 all covered by automated tests; only the ShellExecute verb differs. The genuinely-elevated
 and UAC-declined cases stay on the manual checklist.
 
+**A named pipe created with the default buffer sizes of zero blocks every write until the
+peer reads it.** Not "buffers as needed" — with no buffer, `WriteFile` completes only when
+the reader takes the bytes, so writing to a peer that has stopped reading hangs forever with
+no error. The agent's rejection path does exactly that (it writes "not permitted" and stops
+reading), which hung the client's *previous* write, which hung the test host. The server end
+therefore passes `PipeProtocol.BufferBytes` for both directions. Cost of finding this: an
+afternoon; it presents as a silent hang, and the test runner reports "test host crashed".
+
+**Never `FlushAsync` a pipe.** On a pipe that is `FlushFileBuffers`, which waits for the peer
+to drain everything written — a second way to hang on a peer that is not reading. The write
+has already handed the bytes over; there is nothing to flush. One `WriteAsync` per frame
+also means a frame can never be interleaved with another writer's and left half-written.
+
+**The agent keeps reading while a run is in progress.** Awaiting the run inside the read loop
+meant a `Cancel` was only read once the run it was meant to stop had already finished — so
+cancellation could not work at all. Runs are now tasks owned by their connection, and frames
+are serialised through a per-connection write gate. Connections are likewise served on their
+own tasks, so a second command does not look like "the agent is not running" until the first
+finishes. When a connection drops, its runs are cancelled: nothing is left to receive their
+output, and an elevated process nobody can see or stop is what this design must not leave.
+
+**Cancelling waits for the agent to confirm.** The client used to fire the cancel message
+from a token registration and immediately dispose the pipe, racing the write against the
+teardown — so the elevated process could survive a cancel with nothing left able to stop it.
+It now sends the cancel and keeps reading for a short grace period, and says plainly that
+the command may still be running if the agent never answers.
+
 ---
 
 ## Status
@@ -190,8 +217,11 @@ and UAC-declined cases stay on the manual checklist.
 - [x] **M4 API** — Kestrel, token auth, CRUD + run, SSE, guardrails, approval flow. 27 tests.
       Documented in `API.md`.
 - [~] **M5 Agent** — IN PROGRESS. Pipe protocol, pinned store, agent server, AgentRunner and
-      the scheduled-task installer are all written and compile. **Not yet tested, and the
-      elevated path has never been executed** - see TODO.md for exactly what is outstanding.
+      the scheduled-task installer are written. 42 tests now drive the real client against a
+      real agent over a real pipe, in-process; they found four bugs, all listed above. Still
+      outstanding: **the pin/unpin UI** (nothing can be pinned yet, so the agent has nothing
+      to run) and **the genuinely elevated path, which has still never been executed** — see
+      TODO.md.
 
 M2 and M3 were swapped relative to the original plan: building execution first means the
 widget binds to real commands and real output on day one, instead of a hardcoded list that

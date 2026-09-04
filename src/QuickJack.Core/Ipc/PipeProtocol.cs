@@ -57,6 +57,17 @@ public static class PipeProtocol
     /// <summary>Frames larger than this are refused rather than allocated.</summary>
     public const int MaxFrameBytes = 256 * 1024;
 
+    /// <summary>
+    /// Pipe buffer size, which the server end sets for both directions.
+    /// <para>
+    /// It must not be left at the default of zero. With no buffer, Windows completes a write
+    /// only once the peer has read it — so writing to a peer that has stopped reading (the
+    /// agent rejecting a client, or a client that has been cancelled) blocks forever rather
+    /// than failing. With a buffer, an ordinary frame is handed over and the write returns.
+    /// </para>
+    /// </summary>
+    public const int BufferBytes = 64 * 1024;
+
     /// <summary>Per-user pipe name, so two logged-in users never share an agent.</summary>
     public static string PipeName(string? userSid = null)
     {
@@ -70,12 +81,17 @@ public static class PipeProtocol
         if (json.Length > MaxFrameBytes)
             throw new InvalidOperationException($"Message of {json.Length} bytes exceeds the frame limit.");
 
-        var prefix = new byte[4];
-        BinaryPrimitives.WriteInt32LittleEndian(prefix, json.Length);
+        // One write, not prefix-then-payload: a single call cannot be interleaved with
+        // another writer's, and a frame that is half-written is unrecoverable.
+        var frame = new byte[4 + json.Length];
+        BinaryPrimitives.WriteInt32LittleEndian(frame, json.Length);
+        json.CopyTo(frame.AsSpan(4));
 
-        await stream.WriteAsync(prefix, ct).ConfigureAwait(false);
-        await stream.WriteAsync(json, ct).ConfigureAwait(false);
-        await stream.FlushAsync(ct).ConfigureAwait(false);
+        // Deliberately no FlushAsync. On a named pipe that is FlushFileBuffers, which blocks
+        // until the peer has read everything written — so writing to a peer that has stopped
+        // reading (the agent rejecting a client, say) would hang the writer for good. The
+        // write itself has already handed the bytes to the pipe; there is nothing to flush.
+        await stream.WriteAsync(frame, ct).ConfigureAwait(false);
     }
 
     /// <summary>Reads one frame, or null when the peer closes the pipe.</summary>

@@ -107,9 +107,14 @@ public sealed class UacProcessRunner : ICommandRunner
             {
                 writer.TryWrite(OutputLine.Info(elevate ? "Running elevated." : "Running."));
 
+                // Disposed with this block, and so before `cts` is: an undisposed timeout
+                // source keeps a live timer, and firing it after `cts` has gone throws
+                // ObjectDisposedException on a thread-pool thread, which kills the process.
+                using var timeout = new CancellationTokenSource();
+
                 if (command.TimeoutSeconds > 0)
                 {
-                    var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(command.TimeoutSeconds));
+                    timeout.CancelAfter(TimeSpan.FromSeconds(command.TimeoutSeconds));
                     timeout.Token.Register(() => { timedOut = true; cts.Cancel(); });
                 }
 

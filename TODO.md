@@ -29,12 +29,20 @@ Written and compiling, but **nothing in M5 has been run or tested yet**:
 
 Outstanding:
 
-- [ ] **Tests** - none written yet. Planned: `PipeProtocol` round-trip and oversized-frame
-      rejection; `AgentServer` via `AgentPolicy` seam (unknown id refused, non-agent
-      elevation refused, output streams back, cancel works); `IsDirectorySecured` returns
-      false for inherited ACL / user-writable / user-owned directories.
+- [x] **Tests** - 42 of them, driving the real `AgentRunner` against a real `AgentServer`
+      over a real pipe in one process. `AgentPolicy` gained a `PipeName` so tests never
+      collide with an installed agent. They found four bugs, now fixed and written up in
+      CLAUDE.md: zero-size pipe buffers block every write; `FlushAsync` on a pipe waits for
+      the peer; the agent could not read a `Cancel` during a run; the client raced its
+      cancel against disposing the pipe.
 - [ ] **Pin/unpin UI** - there is no way to pin a command yet, so the agent has nothing to
-      run. This is the missing user-facing half of M5.
+      run. This is the missing user-facing half of M5. Needs: a "pin" action in the palette
+      or settings that elevates once to write `pinned.json`, and an "unpin" that does the
+      reverse. `PinnedStore.Write` already requires administrator; the UI has to shell out
+      to an elevated helper the way `AgentInstaller` does.
+- [ ] `IsDirectorySecured`'s users-can-write branch is unreachable from a test: it is only
+      reached for an Administrators-owned directory, and creating one needs elevation.
+      Covered by the manual checklist instead.
 - [ ] **Never executed elevated.** Install needs a real UAC click, so the scheduled-task
       XML, `--secure-store`, the ACL/owner changes and the whole no-prompt path are all
       unverified. Verify by hand before trusting any of it.
