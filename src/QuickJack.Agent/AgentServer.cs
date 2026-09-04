@@ -19,6 +19,14 @@ public sealed record AgentPolicy
     public bool RequireKnownClient { get; init; } = true;
 
     /// <summary>
+    /// Refuse to serve when the agent's own executable sits somewhere a non-administrator
+    /// could replace it. The installer refuses to create such a task in the first place;
+    /// this is the same check at the other end, for a task created by an older build or by
+    /// hand. Tests turn it off, since a test binary lives in a user-writable output folder.
+    /// </summary>
+    public bool RequireSecureImage { get; init; } = true;
+
+    /// <summary>
     /// Pipe to listen on. Tests give each server its own name so they collide neither with
     /// each other nor with a real agent installed on the same machine.
     /// </summary>
@@ -57,6 +65,18 @@ public sealed class AgentServer(QuickJackPaths paths, AgentLog log, AgentPolicy?
             log.Error($"{paths.MachineDirectory} is not locked down. Refusing to start.");
             _listening.TrySetException(new InvalidOperationException(
                 $"{paths.MachineDirectory} is not locked down."));
+            return;
+        }
+
+        // Running with an administrator token out of a folder the user can write to would
+        // make this process a free escalation for anything running as that user.
+        if (_policy.RequireSecureImage && Environment.ProcessPath is { } image &&
+            (WindowsAcl.IsWritableByNonAdministrators(Path.GetDirectoryName(image)!) ||
+             WindowsAcl.IsWritableByNonAdministrators(image)))
+        {
+            log.Error($"{image} can be replaced by a non-administrator. Refusing to start.");
+            _listening.TrySetException(new InvalidOperationException(
+                $"{image} is not protected from non-administrators."));
             return;
         }
 

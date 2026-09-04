@@ -201,6 +201,18 @@ own tasks, so a second command does not look like "the agent is not running" unt
 finishes. When a connection drops, its runs are cancelled: nothing is left to receive their
 output, and an elevated process nobody can see or stop is what this design must not leave.
 
+**The agent refuses to be installed from, or to run out of, a user-writable folder.** A
+scheduled task with "run with highest privileges" runs *whatever is at that path*. If
+anything running as the user can replace `QuickJack.Agent.exe`, installing the agent does
+not grant high integrity deliberately — it hands it out at next logon. Recording the path,
+or its hash, does not help: an attacker who can swap the binary swaps it at the same path,
+and re-runs the installer. Only the ACL settles it, so `AgentInstaller` refuses (telling the
+user to install under Program Files) and `AgentServer` checks its own image again at
+startup. `IsWritableByNonAdministrators` treats TrustedInstaller and `CREATOR OWNER` as
+administrative, because Program Files — the one place the agent wants to live — is owned by
+TrustedInstaller rather than by Administrators. **A consequence worth knowing: the agent
+cannot be enabled from a `dotnet run` build tree.** That is the check working, not a bug.
+
 **Pinning goes through the same elevated helper as installation, and takes an id.**
 `QuickJack.Agent --pin <id>` runs elevated via ShellExecute `runas` — one UAC prompt per pin,
 which is the cost that makes a no-prompt button something the user granted rather than
@@ -226,13 +238,12 @@ the command may still be running if the agent never answers.
 - [x] **M3 Widget shell** — orb, drag, edge snap, palette, tray, hotkey. Verified end to end.
 - [x] **M4 API** — Kestrel, token auth, CRUD + run, SSE, guardrails, approval flow. 27 tests.
       Documented in `API.md`.
-- [~] **M5 Agent** — IN PROGRESS. Pipe protocol, pinned store, agent server, AgentRunner and
-      the scheduled-task installer are written. 42 tests now drive the real client against a
-      real agent over a real pipe, in-process; they found four bugs, all listed above. Pin
-      and unpin are wired up end to end: right-click a command or press Ctrl+P, confirm what
-      it means, and one UAC prompt writes it to the pinned store. 145 tests.
+- [~] **M5 Agent** — code complete; only the elevated path is unverified. Pipe protocol,
+      pinned store, agent server, `AgentRunner`, installer, and pin/unpin from the palette
+      (right-click or Ctrl+P). 56 new tests drive the real client against a real agent over
+      a real pipe, in-process, and found the four bugs listed above. 152 tests in total.
       Still outstanding: **the genuinely elevated path has never been executed** — installing
-      the agent, and pinning, both need a real UAC click. See TODO.md.
+      the agent and pinning both need a real UAC click. See TODO.md's manual checklist.
 
 M2 and M3 were swapped relative to the original plan: building execution first means the
 widget binds to real commands and real output on day one, instead of a hardcoded list that

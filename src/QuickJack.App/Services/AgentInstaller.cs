@@ -71,6 +71,26 @@ public static class AgentInstaller
         if (widgetExe is null)
             return new InstallResult(false, "Could not determine the widget's own path.");
 
+        // A scheduled task with highest privileges runs whatever is at this path. If anything
+        // running as the user can replace that file, installing the agent hands out a high
+        // integrity process at next logon rather than granting one deliberately — so this is
+        // a refusal, not a warning.
+        var directory = Path.GetDirectoryName(agentExe)!;
+
+        if (WindowsAcl.IsWritableByNonAdministrators(directory) ||
+            WindowsAcl.IsWritableByNonAdministrators(agentExe))
+        {
+            return new InstallResult(false,
+                $"""
+                 QuickJack is installed in a folder that ordinary users can write to:
+                   {directory}
+
+                 The agent runs with administrator rights, so anything able to replace
+                 QuickJack.Agent.exe there could run as administrator at your next sign-in.
+                 Install QuickJack under Program Files before enabling the agent.
+                 """);
+        }
+
         // One elevated call does both halves of the setup: lock down the pinned store, and
         // record which executable the agent will accept connections from.
         var secured = Elevated.RunAndWait(agentExe, ["--secure-store", "--client", widgetExe]);

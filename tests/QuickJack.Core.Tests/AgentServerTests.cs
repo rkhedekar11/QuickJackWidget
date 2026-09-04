@@ -63,12 +63,19 @@ public class AgentServerTests
 
         public AgentRunner Client => new(PipeName);
 
-        public Task Start(bool requireSecuredStore = false, bool requireKnownClient = false)
+        public Task Start(
+            bool requireSecuredStore = false,
+            bool requireKnownClient = false,
+            bool requireSecureImage = false)
         {
             Server = new AgentServer(Root.Paths, new AgentLog(Root.Paths), new AgentPolicy
             {
                 RequireSecuredStore = requireSecuredStore,
                 RequireKnownClient = requireKnownClient,
+
+                // Off by default here: the test binary lives in a user-writable output
+                // folder, which is exactly what this check exists to reject.
+                RequireSecureImage = requireSecureImage,
                 PipeName = PipeName,
             });
 
@@ -314,6 +321,20 @@ public class AgentServerTests
         await using var agent = new Harness();
 
         await agent.Start(requireSecuredStore: true).WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Contains("Refusing to start", agent.Log());
+        Assert.False(await AgentRunner.IsAvailableAsync(agent.PipeName));
+    }
+
+    [Fact]
+    public async Task The_agent_refuses_to_start_from_a_user_writable_folder()
+    {
+        // A high-integrity process whose own binary anything running as the user could
+        // replace is a free escalation at next logon, not a granted one. The test binary
+        // lives in exactly such a folder, which is what makes this testable.
+        await using var agent = new Harness();
+
+        await agent.Start(requireSecureImage: true).WaitAsync(TimeSpan.FromSeconds(10));
 
         Assert.Contains("Refusing to start", agent.Log());
         Assert.False(await AgentRunner.IsAvailableAsync(agent.PipeName));

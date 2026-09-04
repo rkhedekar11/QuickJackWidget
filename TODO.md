@@ -16,20 +16,22 @@
       200-command cap, 64 KB script cap, rate limit
 - [ ] Approval flow in the UI for `Approved = false` commands
 
-## M5 — Agent (IN PROGRESS - resume here)
+## M5 — Agent (code complete; only the elevated path is unverified)
 
-Written and compiling, but **nothing in M5 has been run or tested yet**:
+Everything is written and covered by tests, **except the elevated path itself**, which needs
+a human to click a UAC dialog and has still never run:
 
 - `Core/Ipc/PipeProtocol.cs` - length-prefixed JSON frames, per-user pipe name
-- `Core/Storage/PinnedStore.cs` - read/write, `SecureDirectory`, `IsDirectorySecured`
-- `Core/Execution/AgentRunner.cs` - pipe client, streams output back, cancel message
+- `Core/Storage/PinnedStore.cs` - read/write, pin/unpin, `SecureDirectory`, `IsDirectorySecured`
+- `Core/Execution/AgentRunner.cs` - pipe client, streams output back, cancel handshake
 - `Agent/AgentServer.cs` - pipe server, resolves ids against the pinned store only
 - `Agent/ClientProcess.cs` - identifies the connecting exe
-- `App/Services/AgentInstaller.cs` - scheduled-task XML, install/uninstall
+- `Agent/Program.cs` - `--secure-store`, `--pin`, `--unpin`
+- `App/Services/AgentInstaller.cs`, `Elevated.cs`, `PinService.cs`
 
 Outstanding:
 
-- [x] **Tests** - 42 of them, driving the real `AgentRunner` against a real `AgentServer`
+- [x] **Tests** - 56 of them, driving the real `AgentRunner` against a real `AgentServer`
       over a real pipe in one process. `AgentPolicy` gained a `PipeName` so tests never
       collide with an installed agent. They found four bugs, now fixed and written up in
       CLAUDE.md: zero-size pipe buffers block every write; `FlushAsync` on a pipe waits for
@@ -46,8 +48,10 @@ Outstanding:
 - [ ] **Never executed elevated.** Install needs a real UAC click, so the scheduled-task
       XML, `--secure-store`, the ACL/owner changes and the whole no-prompt path are all
       unverified. Verify by hand before trusting any of it.
-- [ ] Decide whether the agent should refuse to start when its own exe is not the one
-      recorded at install time.
+- [x] Whether the agent should refuse to start when its own exe is not the one recorded at
+      install time: recording the path buys nothing, since an attacker who can swap the
+      binary swaps it at the same path. The ACL is what matters, so both the installer and
+      the agent now refuse a user-writable image outright. Written up in CLAUDE.md.
 
 
 ---
@@ -73,3 +77,5 @@ Run after M3, and again after any window-management change.
       `notepad` cannot save over `pinned.json`
 - [ ] Unpin restores the original user-store command, elevation and all
 - [ ] Pinning is refused for a command that is still awaiting approval
+- [ ] Enabling the agent from a build tree is refused with "install under Program Files";
+      from a Program Files install it succeeds
