@@ -42,7 +42,7 @@ dotnet test
 ## Registering a command
 
 ```bash
-QJ_TOKEN=$(cat "$APPDATA/QuickJack/api-token")
+QJ_TOKEN=$(cat "$USERPROFILE/.quickjack/api-token")
 
 curl -X POST http://127.0.0.1:47821/api/commands \
   -H "Authorization: Bearer $QJ_TOKEN" \

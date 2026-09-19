@@ -83,10 +83,10 @@ The tray icon uses the in-box WinForms `NotifyIcon` rather than a third-party pa
 
 | File | ACL | Written by | Max elevation |
 |---|---|---|---|
-| `%APPDATA%\QuickJack\commands.json` | user | UI + API | `Uac` |
+| `%USERPROFILE%\.quickjack\commands.json` | user | UI + API | `Uac` |
 | `%ProgramData%\QuickJack\pinned.json` | **Admin write, user read** | UI, via one UAC prompt | `Agent` |
-| `%APPDATA%\QuickJack\settings.json` | user | UI | — |
-| `%APPDATA%\QuickJack\api-token` | user only, inheritance disabled | app, first run | — |
+| `%USERPROFILE%\.quickjack\settings.json` | user | UI | — |
+| `%USERPROFILE%\.quickjack\api-token` | user only, inheritance disabled | app, first run | — |
 | `%ProgramData%\QuickJack\agent.log` | admin write | Agent | — |
 
 `QuickJackPaths.Under(root)` redirects all of it under one directory, which is how tests get
@@ -160,7 +160,15 @@ come from WinForms `Screen` in the same physical units, so no conversion is invo
 `GlobalUsings.cs` aliases each to the WPF one; the tray icon and `Screen` name the WinForms
 type explicitly.
 
-**Startup is logged to `%APPDATA%\QuickJack\app.log`.** A tray app has no console and no
+**User state lives in `%USERPROFILE%\.quickjack`, not `%APPDATA%`.** Windows silently
+redirects AppData for any process started from an MSIX-packaged app — the Claude desktop app
+is one — into `%LOCALAPPDATA%\Packages\<pkg>\LocalCache\Roaming`. A widget started from
+`run.bat` and a script started from Claude therefore read two different `api-token` files,
+and every API call got 401 with nothing visibly wrong. The profile root is not virtualised.
+On first start the app copies `commands.json` and `settings.json` over from the old folder;
+the token is regenerated rather than copied, because a copy would not keep its ACL.
+
+**Startup is logged to `%USERPROFILE%\.quickjack\app.log`.** A tray app has no console and no
 window to print to, so a startup failure is otherwise completely silent. `OnStartup` is
 `async void`, so its body is wrapped in a try/catch that logs and shows a message rather
 than failing invisibly — this is how the globalization bug above was found in one run.

@@ -149,7 +149,7 @@ public sealed class ApiHost(ApiOptions options) : IAsyncDisposable
         if (Token is null || !ApiToken.Matches(Token, presented))
         {
             await Deny(http, StatusCodes.Status401Unauthorized,
-                "Provide the token from %APPDATA%\\QuickJack\\api-token as a Bearer token.");
+                "Provide the token from %USERPROFILE%\\.quickjack\\api-token as a Bearer token.");
             return;
         }
 

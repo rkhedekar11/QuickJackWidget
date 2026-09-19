@@ -42,6 +42,7 @@ public partial class App : Application
     private async Task StartAsync()
     {
         var paths = QuickJackPaths.Default;
+        paths.MigrateFrom(QuickJackPaths.LegacyUserDirectory);
         paths.EnsureUserDirectory();
 
         Log.Initialise(paths);

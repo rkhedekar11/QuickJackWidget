@@ -5,6 +5,12 @@ namespace QuickJack.Core.Storage;
 /// writable by anything running as the user (including the HTTP API); the pinned store
 /// lives in ProgramData and is ACL'd admin-write, which is what makes no-prompt
 /// elevation defensible.
+/// <para>
+/// User state lives in <c>%USERPROFILE%\.quickjack</c>, not <c>%APPDATA%</c>: Windows
+/// silently redirects AppData writes for any process started from an MSIX-packaged app
+/// (the Claude desktop app, for one), so two processes could each see a different
+/// api-token and commands.json. The profile root is not virtualised.
+/// </para>
 /// </summary>
 public sealed class QuickJackPaths
 {
@@ -21,10 +27,14 @@ public sealed class QuickJackPaths
     public static QuickJackPaths Default { get; } = new()
     {
         UserDirectory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "QuickJack"),
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".quickjack"),
         MachineDirectory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "QuickJack"),
     };
+
+    /// <summary>Where user state lived before it moved out of AppData.</summary>
+    public static string LegacyUserDirectory { get; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "QuickJack");
 
     /// <summary>All state under one root. Used by tests.</summary>
     public static QuickJackPaths Under(string root) => new()
@@ -34,4 +44,22 @@ public sealed class QuickJackPaths
     };
 
     public void EnsureUserDirectory() => Directory.CreateDirectory(UserDirectory);
+
+    /// <summary>
+    /// Carries commands and settings over from <paramref name="legacyDirectory"/> the first
+    /// time the new directory is used. The token is deliberately not copied: a copy would
+    /// not keep its restricted ACL, and a fresh one is created with it.
+    /// </summary>
+    public void MigrateFrom(string legacyDirectory)
+    {
+        if (!Directory.Exists(legacyDirectory)) return;
+        EnsureUserDirectory();
+
+        foreach (var name in new[] { "commands.json", "settings.json" })
+        {
+            var source = Path.Combine(legacyDirectory, name);
+            var target = Path.Combine(UserDirectory, name);
+            if (File.Exists(source) && !File.Exists(target)) File.Copy(source, target);
+        }
+    }
 }

@@ -10,18 +10,18 @@ QuickJack writes two files on first run:
 
 | File | Contents |
 |---|---|
-| `%APPDATA%\QuickJack\endpoint.json` | `{ "port": 47821, "baseUrl": "...", "tokenPath": "..." }` |
-| `%APPDATA%\QuickJack\api-token` | 32 random bytes, base64url, ACL'd to you alone |
+| `%USERPROFILE%\.quickjack\endpoint.json` | `{ "port": 47821, "baseUrl": "...", "tokenPath": "..." }` |
+| `%USERPROFILE%\.quickjack\api-token` | 32 random bytes, base64url, ACL'd to you alone |
 
 The server binds **127.0.0.1 only** and requires the token as a bearer credential.
 
 ```bash
-QJ_TOKEN=$(cat "$APPDATA/QuickJack/api-token")
+QJ_TOKEN=$(cat "$USERPROFILE/.quickjack/api-token")
 curl -s -H "Authorization: Bearer $QJ_TOKEN" http://127.0.0.1:47821/api/health
 ```
 
 ```powershell
-$token = (Get-Content "$env:APPDATA\QuickJack\api-token" -Raw).Trim()
+$token = (Get-Content "$env:USERPROFILE\.quickjack\api-token" -Raw).Trim()
 $headers = @{ Authorization = "Bearer $token"; "X-QuickJack-Client" = "my-script" }
 Invoke-RestMethod http://127.0.0.1:47821/api/health -Headers $headers
 ```
@@ -105,7 +105,7 @@ Changing an approved command's script, shell, elevation or working directory rev
 approval — otherwise a caller could register something innocuous, wait, then swap the script.
 
 Turn the gate off with `"requireApprovalForApiCommands": false` in
-`%APPDATA%\QuickJack\settings.json`.
+`%USERPROFILE%\.quickjack\settings.json`.
 
 ## Parameters
 

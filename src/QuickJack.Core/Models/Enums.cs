@@ -29,6 +29,6 @@ public enum OutputMode
 /// <summary>Which store a command was loaded from.</summary>
 public enum CommandOrigin
 {
-    User,   // %APPDATA%\QuickJack\commands.json  — user-writable
+    User,   // %USERPROFILE%\.quickjack\commands.json — user-writable
     Pinned, // %ProgramData%\QuickJack\pinned.json — admin-writable
 }
